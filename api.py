@@ -210,10 +210,11 @@ async def cron_tick(authorization: str | None = Header(default=None)) -> dict:
                 actions_taken.append({"symbol": pos["symbol"], "action": action, "error": str(e)})
 
     # Run strategy on each symbol
+    timeframe = "1Min"
     orders_placed = []
     for symbol in symbols:
         try:
-            data = get_historical_bars(symbol, "1Min", limit=300)
+            data = get_historical_bars(symbol, timeframe, limit=300)
             if data.empty or len(data) < 35:
                 continue
 
@@ -233,6 +234,7 @@ async def cron_tick(authorization: str | None = Header(default=None)) -> dict:
         "status": "ok",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "strategy": strategy_name,
+        "timeframe": timeframe,
         "symbols_checked": len(symbols),
         "orders_placed": len(orders_placed),
         "risk_actions": actions_taken,
