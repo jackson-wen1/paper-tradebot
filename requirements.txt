@@ -1,0 +1,8 @@
+alpaca-py
+pandas
+numpy
+python-dotenv
+pytz
+fastapi
+uvicorn[standard]
+pytest
