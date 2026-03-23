@@ -5,10 +5,12 @@ Provides real-time portfolio visibility and exposes data for the dashboard API.
 """
 
 import logging
+import requests
 from datetime import datetime, timezone
 from typing import Optional
 
 from alpaca.trading.client import TradingClient
+from alpaca.trading.requests import GetPortfolioHistoryRequest
 
 from config import ALPACA_API_KEY, ALPACA_API_SECRET, ALPACA_BASE_URL
 
@@ -121,8 +123,7 @@ def get_portfolio_history(
     """
     client = _get_client()
     history = client.get_portfolio_history(
-        period=period,
-        timeframe=timeframe,
+        GetPortfolioHistoryRequest(period=period, timeframe=timeframe)
     )
     return {
         "timestamps": [
@@ -140,22 +141,31 @@ def get_portfolio_history(
 
 def get_activities(activity_type: str = "FILL", limit: int = 50) -> list[dict]:
     """Fetch recent account activities (fills, dividends, etc.)."""
-    client = _get_client()
-    activities = client.get_activities(activity_types=activity_type)
+    base = ALPACA_BASE_URL.rstrip("/")
+    resp = requests.get(
+        f"{base}/v2/account/activities/{activity_type}",
+        headers={
+            "APCA-API-KEY-ID": ALPACA_API_KEY,
+            "APCA-API-SECRET-KEY": ALPACA_API_SECRET,
+        },
+        params={"limit": limit},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    activities = resp.json()
     result = []
     for a in activities[:limit]:
         entry = {
-            "id": str(a.id),
-            "activity_type": str(a.activity_type),
+            "id": str(a.get("id", "")),
+            "activity_type": str(a.get("activity_type", activity_type)),
         }
-        # Trade activities have symbol, side, qty, price
-        if hasattr(a, "symbol"):
+        if "symbol" in a:
             entry.update({
-                "symbol": a.symbol,
-                "side": str(a.side) if a.side else None,
-                "qty": float(a.qty) if a.qty else 0,
-                "price": float(a.price) if a.price else 0,
-                "transaction_time": str(a.transaction_time) if a.transaction_time else None,
+                "symbol": a.get("symbol"),
+                "side": a.get("side"),
+                "qty": float(a["qty"]) if a.get("qty") else 0,
+                "price": float(a["price"]) if a.get("price") else 0,
+                "transaction_time": a.get("transaction_time"),
             })
         result.append(entry)
     return result
