@@ -261,7 +261,7 @@ async def cron_tick(authorization: str | None = Header(default=None)) -> dict:
     orders_placed = []
     for symbol in symbols:
         try:
-            data = get_historical_bars(symbol, timeframe, limit=300)
+            data = get_historical_bars(symbol, timeframe, limit=100)
             if data.empty or len(data) < 35:
                 continue
 
