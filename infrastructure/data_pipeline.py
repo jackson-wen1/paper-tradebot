@@ -129,9 +129,12 @@ def get_historical_bars(
     if end is None:
         end = datetime.now().strftime("%Y-%m-%d")
 
-    # Check cache
+    # Only cache daily bars — intraday data changes every minute so cache is useless
+    INTRADAY = timeframe != "1Day"
+
+    # Check cache (daily only)
     cache_path = _cache_key(symbol, timeframe, start, end)
-    if cache_path.exists():
+    if not INTRADAY and cache_path.exists():
         logger.info("Loading cached bars for %s", symbol)
         return pd.read_parquet(cache_path)
 
