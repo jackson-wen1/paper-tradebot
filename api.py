@@ -7,10 +7,12 @@ Also provides a /api/cron/tick endpoint for Vercel Cron to trigger trading.
 """
 
 import asyncio
+import json
 import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import AsyncGenerator
 
 from fastapi import FastAPI, Header, HTTPException
@@ -31,13 +33,39 @@ from infrastructure.risk_management import RiskManager
 
 logger = logging.getLogger(__name__)
 
-# Bot state (shared with the trading loop if run in same process)
-bot_state = {
-    "strategy": os.getenv("BOT_STRATEGY", "momentum"),
-    "symbols": os.getenv("BOT_SYMBOLS", "SPY,AAPL,MSFT,GOOGL,AMZN,NVDA").split(","),
+BOT_STATE_FILE = Path("/tmp/bot_state.json")
+
+_DEFAULT_STATE = {
+    "strategy": "momentum",
+    "symbols": ["SPY", "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA"],
+    "timeframe": "1Min",
     "running": False,
     "started_at": None,
 }
+
+def _load_bot_state() -> dict:
+    if BOT_STATE_FILE.exists():
+        try:
+            saved = json.loads(BOT_STATE_FILE.read_text())
+            state = dict(_DEFAULT_STATE)
+            state.update({k: saved[k] for k in ("strategy", "symbols", "timeframe") if k in saved})
+            return state
+        except Exception:
+            pass
+    return dict(_DEFAULT_STATE)
+
+def _save_bot_state() -> None:
+    try:
+        BOT_STATE_FILE.write_text(json.dumps({
+            "strategy": bot_state["strategy"],
+            "symbols": bot_state["symbols"],
+            "timeframe": bot_state["timeframe"],
+        }))
+    except Exception as e:
+        logger.warning("Failed to persist bot state: %s", e)
+
+# Bot state (shared with the trading loop if run in same process)
+bot_state = _load_bot_state()
 
 
 @asynccontextmanager
@@ -120,11 +148,12 @@ async def api_bot_status() -> dict:
 class BotConfigUpdate(BaseModel):
     strategy: str | None = None
     symbols: list[str] | None = None
+    timeframe: str | None = None
 
 
 @app.post("/api/bot/config")
 async def api_bot_config(update: BotConfigUpdate) -> dict:
-    """Update bot strategy and/or symbols at runtime."""
+    """Update bot strategy, symbols, and/or timeframe at runtime."""
     if update.strategy is not None:
         if update.strategy not in STRATEGY_MAP:
             return {"status": "error", "reason": f"unknown strategy: {update.strategy}"}
@@ -136,6 +165,13 @@ async def api_bot_config(update: BotConfigUpdate) -> dict:
             return {"status": "error", "reason": "symbols list cannot be empty"}
         bot_state["symbols"] = cleaned
 
+    if update.timeframe is not None:
+        from infrastructure.data_pipeline import TIMEFRAME_MAP
+        if update.timeframe not in TIMEFRAME_MAP:
+            return {"status": "error", "reason": f"unknown timeframe: {update.timeframe}"}
+        bot_state["timeframe"] = update.timeframe
+
+    _save_bot_state()
     return {"status": "ok", **bot_state}
 
 
@@ -210,7 +246,7 @@ async def cron_tick(authorization: str | None = Header(default=None)) -> dict:
                 actions_taken.append({"symbol": pos["symbol"], "action": action, "error": str(e)})
 
     # Run strategy on each symbol
-    timeframe = "1Min"
+    timeframe = bot_state["timeframe"]
     orders_placed = []
     for symbol in symbols:
         try:

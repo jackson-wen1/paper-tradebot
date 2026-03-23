@@ -10,6 +10,8 @@ const STRATEGIES = [
   "options_volatility",
 ];
 
+const TIMEFRAMES = ["1Min", "5Min", "15Min", "1Hour", "1Day"];
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export function BotControl({
@@ -21,12 +23,14 @@ export function BotControl({
 }) {
   const [strategy, setStrategy] = useState(bot.strategy);
   const [symbolInput, setSymbolInput] = useState(bot.symbols.join(", "));
+  const [timeframe, setTimeframe] = useState(bot.timeframe ?? "1Min");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   const hasChanges =
     strategy !== bot.strategy ||
-    symbolInput.trim() !== bot.symbols.join(", ");
+    symbolInput.trim() !== bot.symbols.join(", ") ||
+    timeframe !== (bot.timeframe ?? "1Min");
 
   async function handleSave() {
     setSaving(true);
@@ -34,7 +38,7 @@ export function BotControl({
     try {
       const symbols = symbolInput
         .split(",")
-        .map((s) => s.trim().toUpperCase())
+        .map((s: string) => s.trim().toUpperCase())
         .filter(Boolean);
 
       const res = await fetch(
@@ -42,7 +46,7 @@ export function BotControl({
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ strategy, symbols }),
+          body: JSON.stringify({ strategy, symbols, timeframe }),
         }
       );
       const data = await res.json();
@@ -76,6 +80,22 @@ export function BotControl({
             <option key={s} value={s}>
               {s.replace(/_/g, " ")}
             </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Timeframe selector */}
+      <div>
+        <label className="block text-xs text-zinc-500 uppercase tracking-wider mb-1.5">
+          Timeframe
+        </label>
+        <select
+          value={timeframe}
+          onChange={(e) => setTimeframe(e.target.value)}
+          className="w-full rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-100 px-3 py-2 text-sm focus:outline-none focus:border-purple-500"
+        >
+          {TIMEFRAMES.map((t) => (
+            <option key={t} value={t}>{t}</option>
           ))}
         </select>
       </div>

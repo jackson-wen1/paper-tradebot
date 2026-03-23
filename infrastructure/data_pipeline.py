@@ -125,7 +125,11 @@ def get_historical_bars(
         raise ValueError(f"Invalid timeframe '{timeframe}'. Use: {list(TIMEFRAME_MAP.keys())}")
 
     if start is None:
-        start = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
+        if timeframe == "1Day":
+            start = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
+        else:
+            # For intraday, look back only a few days to get recent bars
+            start = (datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d")
     if end is None:
         end = datetime.now().strftime("%Y-%m-%d")
 
@@ -162,9 +166,10 @@ def get_historical_bars(
 
     df = _clean_bars(df)
 
-    # Cache result
-    df.to_parquet(cache_path)
-    logger.info("Fetched and cached %d bars for %s", len(df), symbol)
+    # Only cache daily bars — intraday is fetched fresh every tick
+    if not INTRADAY:
+        df.to_parquet(cache_path)
+    logger.info("Fetched %d bars for %s (%s)", len(df), symbol, timeframe)
 
     return df
 

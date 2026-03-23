@@ -59,6 +59,7 @@ export interface MarketStatus {
 export interface BotStatus {
   strategy: string;
   symbols: string[];
+  timeframe: string;
   running: boolean;
   started_at: string | null;
 }
