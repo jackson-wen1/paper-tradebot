@@ -39,7 +39,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const { searchParams } = new URL(request.url);
   const endpoint = searchParams.get("endpoint") || "";
-  const allowedPost = ["/api/bot/config"];
+  const allowedPost = ["/api/bot/config", "/api/test-order"];
 
   if (!allowedPost.includes(endpoint)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });

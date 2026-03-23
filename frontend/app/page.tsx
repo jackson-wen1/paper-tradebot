@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import useSWR from "swr";
 import {
   Account,
@@ -80,6 +81,50 @@ function MarketBadge({ status }: { status?: MarketStatus }) {
       />
       {status.is_open ? "Market Open" : "Market Closed"}
     </span>
+  );
+}
+
+function TestOrderButton() {
+  const [status, setStatus] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function handleTest() {
+    setLoading(true);
+    setStatus(null);
+    try {
+      const res = await fetch(`${API_URL}/api/test-order`, { method: "POST" });
+      const data = await res.json();
+      if (data.status === "ok") {
+        setStatus(`Order placed! ID: ${data.order?.id ?? "unknown"}`);
+      } else {
+        setStatus(`Error: ${data.reason}`);
+      }
+    } catch {
+      setStatus("Failed to reach API");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="mt-8 rounded-xl bg-[#12121a] border border-[#1e1e2e] p-5">
+      <h2 className="text-lg font-semibold mb-3">Test Order</h2>
+      <p className="text-sm text-zinc-500 mb-3">Buy 1 share of NVDA (paper trading)</p>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={handleTest}
+          disabled={loading}
+          className="px-4 py-2 rounded-lg text-sm font-medium bg-yellow-600 hover:bg-yellow-500 text-white transition-colors disabled:opacity-50"
+        >
+          {loading ? "Placing..." : "Buy 1 NVDA"}
+        </button>
+        {status && (
+          <span className={`text-sm ${status.startsWith("Error") || status.startsWith("Failed") ? "text-red-400" : "text-green-400"}`}>
+            {status}
+          </span>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -206,6 +251,9 @@ export default function Dashboard() {
           <BotControl bot={bot} onUpdate={() => mutateBot()} />
         </div>
       )}
+
+      {/* Test Order */}
+      <TestOrderButton />
     </main>
   );
 }

@@ -115,6 +115,17 @@ async def api_pnl() -> dict:
     return get_daily_pnl()
 
 
+@app.post("/api/test-order")
+async def api_test_order() -> dict:
+    """Buy 1 share of NVDA as a test."""
+    from infrastructure.order_execution import submit_market_order
+    try:
+        order = submit_market_order("NVDA", "buy", 1)
+        return {"status": "ok", "order": order}
+    except Exception as e:
+        return {"status": "error", "reason": str(e)}
+
+
 @app.get("/api/history")
 async def api_history(period: str = "1M", timeframe: str = "1D") -> dict:
     """Get portfolio equity history for charts."""
