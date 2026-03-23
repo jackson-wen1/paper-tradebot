@@ -6,3 +6,5 @@ pytz
 fastapi
 uvicorn[standard]
 pytest
+pyarrow
+requests
