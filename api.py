@@ -13,8 +13,9 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import AsyncGenerator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from infrastructure.account_monitor import (
     get_account,
@@ -116,6 +117,28 @@ async def api_bot_status() -> dict:
     return bot_state
 
 
+class BotConfigUpdate(BaseModel):
+    strategy: str | None = None
+    symbols: list[str] | None = None
+
+
+@app.post("/api/bot/config")
+async def api_bot_config(update: BotConfigUpdate) -> dict:
+    """Update bot strategy and/or symbols at runtime."""
+    if update.strategy is not None:
+        if update.strategy not in STRATEGY_MAP:
+            return {"status": "error", "reason": f"unknown strategy: {update.strategy}"}
+        bot_state["strategy"] = update.strategy
+
+    if update.symbols is not None:
+        cleaned = [s.strip().upper() for s in update.symbols if s.strip()]
+        if not cleaned:
+            return {"status": "error", "reason": "symbols list cannot be empty"}
+        bot_state["symbols"] = cleaned
+
+    return {"status": "ok", **bot_state}
+
+
 # ---------------------------------------------------------------------------
 # Cron Tick — Vercel Cron (or any scheduler) calls this to execute one
 # trading cycle. This is how the bot runs 24/7 without a persistent server.
@@ -131,13 +154,17 @@ STRATEGY_MAP = {
 
 
 @app.post("/api/cron/tick")
-async def cron_tick() -> dict:
+async def cron_tick(authorization: str | None = Header(default=None)) -> dict:
     """
     Execute one cycle of the trading bot.
 
-    Called by Vercel Cron every minute during market hours (9-16 ET, Mon-Fri).
+    Called by an external cron service every minute during market hours.
     Stateless: reads account, generates signals, executes orders.
     """
+    cron_secret = os.getenv("CRON_SECRET")
+    if cron_secret:
+        if authorization != f"Bearer {cron_secret}":
+            raise HTTPException(status_code=401, detail="Unauthorized")
     import importlib
     from infrastructure.order_execution import submit_market_order
 

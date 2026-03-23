@@ -13,6 +13,7 @@ import {
 import { EquityChart } from "@/components/EquityChart";
 import { PositionsTable } from "@/components/PositionsTable";
 import { ActivityFeed } from "@/components/ActivityFeed";
+import { BotControl } from "@/components/BotControl";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -106,7 +107,7 @@ export default function Dashboard() {
     fetcher,
     { refreshInterval: 60000 }
   );
-  const { data: bot } = useSWR<BotStatus>(`${API_URL}/api/bot`, fetcher, {
+  const { data: bot, mutate: mutateBot } = useSWR<BotStatus>(`${API_URL}/api/bot`, fetcher, {
     refreshInterval: 30000,
   });
   const { data: activities } = useSWR<Activity[]>(
@@ -198,20 +199,11 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Watched Symbols */}
+      {/* Bot Control */}
       {bot && (
         <div className="mt-8 rounded-xl bg-[#12121a] border border-[#1e1e2e] p-5">
-          <h2 className="text-lg font-semibold mb-3">Watched Symbols</h2>
-          <div className="flex flex-wrap gap-2">
-            {bot.symbols.map((s) => (
-              <span
-                key={s}
-                className="px-3 py-1 rounded-lg bg-zinc-800 text-zinc-300 text-sm font-mono"
-              >
-                {s}
-              </span>
-            ))}
-          </div>
+          <h2 className="text-lg font-semibold mb-4">Bot Configuration</h2>
+          <BotControl bot={bot} onUpdate={() => mutateBot()} />
         </div>
       )}
     </main>

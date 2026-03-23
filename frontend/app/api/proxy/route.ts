@@ -35,3 +35,23 @@ export async function GET(request: Request) {
 
   return proxyGet(endpoint);
 }
+
+export async function POST(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const endpoint = searchParams.get("endpoint") || "";
+  const allowedPost = ["/api/bot/config"];
+
+  if (!allowedPost.includes(endpoint)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  const body = await request.json();
+  const res = await fetch(`${PYTHON_API}${endpoint}`, {
+    method: "POST",
+    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  return NextResponse.json(data);
+}
