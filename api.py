@@ -256,15 +256,28 @@ async def cron_tick(authorization: str | None = Header(default=None)) -> dict:
             except Exception as e:
                 actions_taken.append({"symbol": pos["symbol"], "action": action, "error": str(e)})
 
-    # Run strategy on each symbol
+    # Fetch all symbol bars in parallel, then execute strategy sequentially.
+    # Parallel fetch cuts total time from sum(latency) to max(latency).
+    # Strategy execution stays sequential to avoid shared RiskManager race conditions.
     timeframe = bot_state["timeframe"]
-    orders_placed = []
-    for symbol in symbols:
-        try:
-            data = get_historical_bars(symbol, timeframe, limit=100)
-            if data.empty or len(data) < 35:
-                continue
+    loop = asyncio.get_running_loop()
 
+    async def _fetch(sym: str):
+        try:
+            return sym, await loop.run_in_executor(
+                None, lambda: get_historical_bars(sym, timeframe, limit=50)
+            )
+        except Exception as e:
+            logger.error("Bar fetch error for %s: %s", sym, e)
+            return sym, None
+
+    fetched = await asyncio.gather(*[_fetch(s) for s in symbols])
+
+    orders_placed = []
+    for symbol, data in fetched:
+        if data is None or data.empty or len(data) < 35:
+            continue
+        try:
             result = strategy_module.execute(
                 symbol=symbol,
                 risk_manager=_risk_manager,
