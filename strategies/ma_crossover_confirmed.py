@@ -3,20 +3,26 @@ MA Crossover Confirmed Strategy — ML-optimizable moving average crossover
 with three confirmation modes.
 
 Core idea:
-  Compute a short-term MA (default 7) and long-term MA (default 21).
+  Compute a short-term MA and long-term MA.
   When they cross, wait for *confirmation* before acting. The confirmation
   logic depends on the chosen signal mode:
 
 Signal Modes:
-  1. iqr_avg     — After a cross, compute MA diff N bars later. The diff
-                   must exceed a threshold derived from the MEAN of the last
-                   X rolling-IQR values measured right before the cross.
+  1. iqr_avg     — After a cross, check MA diff across a confirmation window.
+                   The diff must exceed a threshold derived from the MEAN of
+                   recent rolling-IQR values measured before the cross.
   2. iqr_highlow — Same as (1), but uses asymmetric thresholds: the MAX of
                    recent IQR for buy signals (conservative in high-vol) and
                    the MIN for sell signals (quicker exit in low-vol).
   3. bollinger   — After a cross, if the short MA breaks through Bollinger
                    Bands computed on the long MA within a configurable window,
                    signal. Captures strong momentum after the cross.
+
+Structural features:
+  - Window confirmation: fires as soon as threshold is met within 1..N bars
+  - Trend filter: optional long-term MA to avoid counter-trend trades
+  - Volume filter: optional above-average volume requirement
+  - Exit on reverse cross: immediate sell when MAs cross back (no confirmation)
 
 All tuneable parameters were optimised via walk-forward random search
 (optimization/ folder, gitignored).
@@ -50,28 +56,38 @@ VALID_SIGNAL_MODES = ("iqr_avg", "iqr_highlow", "bollinger")
 class MACrossoverConfig:
     """All tuneable parameters for the confirmed MA crossover strategy."""
 
-    # Moving averages (optimised via walk-forward random search on SPY 2022-2025)
-    short_ma_period: int = 13
-    long_ma_period: int = 17
+    # Moving averages
+    short_ma_period: int = 11
+    long_ma_period: int = 21
 
     # Signal mode
-    signal_mode: str = "iqr_highlow"  # "iqr_avg" | "iqr_highlow" | "bollinger"
+    signal_mode: str = "iqr_avg"  # "iqr_avg" | "iqr_highlow" | "bollinger"
 
-    # Confirmation window — how many bars after the cross to check (modes 1 & 2)
-    confirmation_bars: int = 5
+    # Confirmation window — check across bars 1..N after the cross (modes 1 & 2)
+    confirmation_bars: int = 6
 
     # Fallback threshold as a fraction of price (used when IQR data is sparse)
     confirmation_pct: float = 0.002
 
     # IQR parameters (modes iqr_avg & iqr_highlow)
-    iqr_window: int = 18       # rolling window for IQR of close prices
-    iqr_lookback: int = 22     # how many IQR values to aggregate before the cross
-    iqr_multiplier: float = 1.442  # scale the IQR-based threshold
+    iqr_window: int = 7        # rolling window for IQR of close prices
+    iqr_lookback: int = 20     # how many IQR values to aggregate before the cross
+    iqr_multiplier: float = 1.8110  # scale the IQR-based threshold
 
     # Bollinger Band parameters (mode bollinger)
     bb_period: int = 21        # lookback for BB computed on the long MA series
     bb_std_dev: float = 2.0    # number of standard deviations
     bb_wait_bars: int = 5      # max bars after cross to wait for BB break
+
+    # Trend filter — long-term MA; set to 0 to disable
+    trend_ma_period: int = 11
+
+    # Volume filter — require volume > X× its moving average; set to 0 to disable
+    volume_ma_period: int = 2
+    volume_multiplier: float = 1.6263
+
+    # Exit on reverse cross without needing confirmation
+    exit_on_reverse: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +150,17 @@ def generate_signals(
         long_ma_series, config.bb_period, config.bb_std_dev,
     )
 
+    # Trend filter MA (0 = disabled)
+    trend_ma = np.full(n, np.nan)
+    if config.trend_ma_period > 0:
+        trend_ma = close.rolling(config.trend_ma_period).mean().values
+
+    # Volume filter (0 = disabled)
+    vol_ma = np.full(n, np.nan)
+    if config.volume_ma_period > 0 and "volume" in data.columns:
+        volume = data["volume"].astype(float)
+        vol_ma = volume.rolling(config.volume_ma_period).mean().values
+
     # --- Output arrays ---
     signal = np.zeros(n, dtype=int)
     strength = np.full(n, 0.5)
@@ -143,12 +170,15 @@ def generate_signals(
         config.long_ma_period,
         config.iqr_window + config.iqr_lookback,
         config.bb_period + config.long_ma_period,
+        config.trend_ma_period,
     ) + 1
 
     cross_type: Optional[str] = None   # "up" or "down"
     cross_bar: int = -999
+    confirmed: bool = False             # has this cross already fired a signal?
     buy_thresh: float = 0.0
     sell_thresh: float = 0.0
+    in_position: bool = False           # track if we've entered a long
 
     for i in range(warmup, n):
         # Skip if MAs not ready
@@ -159,12 +189,23 @@ def generate_signals(
         prev_above = short_ma[i - 1] > long_ma[i - 1]
         curr_above = short_ma[i] > long_ma[i]
 
+        # ---- Exit on reverse cross (no confirmation needed) ----
+        if config.exit_on_reverse and in_position:
+            if not curr_above and prev_above:
+                # MAs crossed back down while we're long → exit
+                signal[i] = -1
+                strength[i] = 0.5
+                in_position = False
+                cross_type = None
+                confirmed = False
+                continue
+
         # ---- Detect new crossover ----
         new_cross = False
         if curr_above and not prev_above:
-            cross_type, cross_bar, new_cross = "up", i, True
+            cross_type, cross_bar, new_cross, confirmed = "up", i, True, False
         elif not curr_above and prev_above:
-            cross_type, cross_bar, new_cross = "down", i, True
+            cross_type, cross_bar, new_cross, confirmed = "down", i, True, False
 
         # Compute IQR thresholds at the moment of the cross
         if new_cross and config.signal_mode in ("iqr_avg", "iqr_highlow"):
@@ -182,31 +223,51 @@ def generate_signals(
                 buy_thresh = float(close.iloc[i]) * config.confirmation_pct
                 sell_thresh = buy_thresh
 
-        # ---- Check confirmation ----
+        # ---- Check confirmation (window: any bar from 1..N) ----
         bars_since = i - cross_bar
 
         if config.signal_mode in ("iqr_avg", "iqr_highlow"):
-            if cross_type is not None and bars_since == config.confirmation_bars:
+            if cross_type is not None and not confirmed \
+               and 1 <= bars_since <= config.confirmation_bars:
                 ma_diff = abs(short_ma[i] - long_ma[i])
                 if cross_type == "up" and ma_diff > buy_thresh:
-                    signal[i] = 1
-                    strength[i] = min(1.0, ma_diff / buy_thresh) if buy_thresh > 0 else 1.0
+                    if _passes_filters(config, close, data, trend_ma, vol_ma, i, "buy"):
+                        signal[i] = 1
+                        excess = (ma_diff - buy_thresh) / buy_thresh if buy_thresh > 0 else 1.0
+                        strength[i] = min(1.0, 0.3 + 0.35 * excess)
+                        confirmed = True
+                        in_position = True
                 elif cross_type == "down" and ma_diff > sell_thresh:
-                    signal[i] = -1
-                    strength[i] = min(1.0, ma_diff / sell_thresh) if sell_thresh > 0 else 1.0
-                cross_type = None  # consumed
+                    if _passes_filters(config, close, data, trend_ma, vol_ma, i, "sell"):
+                        signal[i] = -1
+                        excess = (ma_diff - sell_thresh) / sell_thresh if sell_thresh > 0 else 1.0
+                        strength[i] = min(1.0, 0.3 + 0.35 * excess)
+                        confirmed = True
+                        in_position = False
+            # Expire after confirmation window
+            if cross_type is not None and bars_since > config.confirmation_bars:
+                cross_type = None
 
         elif config.signal_mode == "bollinger":
-            if cross_type is not None and 0 < bars_since <= config.bb_wait_bars:
+            if cross_type is not None and not confirmed \
+               and 0 < bars_since <= config.bb_wait_bars:
                 if not np.isnan(bb_upper[i]) and not np.isnan(bb_lower[i]):
                     if cross_type == "up" and short_ma[i] > bb_upper[i]:
-                        signal[i] = 1
-                        strength[i] = 1.0
-                        cross_type = None
+                        if _passes_filters(config, close, data, trend_ma, vol_ma, i, "buy"):
+                            signal[i] = 1
+                            band_width = bb_upper[i] - bb_lower[i]
+                            bb_excess = (short_ma[i] - bb_upper[i]) / band_width if band_width > 0 else 1.0
+                            strength[i] = min(1.0, 0.3 + 0.35 * bb_excess)
+                            confirmed = True
+                            in_position = True
                     elif cross_type == "down" and short_ma[i] < bb_lower[i]:
-                        signal[i] = -1
-                        strength[i] = 1.0
-                        cross_type = None
+                        if _passes_filters(config, close, data, trend_ma, vol_ma, i, "sell"):
+                            signal[i] = -1
+                            band_width = bb_upper[i] - bb_lower[i]
+                            bb_excess = (bb_lower[i] - short_ma[i]) / band_width if band_width > 0 else 1.0
+                            strength[i] = min(1.0, 0.3 + 0.35 * bb_excess)
+                            confirmed = True
+                            in_position = False
             if cross_type is not None and bars_since > config.bb_wait_bars:
                 cross_type = None  # window expired
 
@@ -230,6 +291,34 @@ def generate_signals(
         config.signal_mode, buy_total, sell_total, n,
     )
     return result
+
+
+def _passes_filters(
+    config: MACrossoverConfig,
+    close: pd.Series,
+    data: pd.DataFrame,
+    trend_ma: np.ndarray,
+    vol_ma: np.ndarray,
+    i: int,
+    side: str,
+) -> bool:
+    """Check trend and volume filters. Returns True if the signal is allowed."""
+    # Trend filter
+    if config.trend_ma_period > 0 and not np.isnan(trend_ma[i]):
+        price = float(close.iloc[i])
+        if side == "buy" and price < trend_ma[i]:
+            return False   # don't buy below trend
+        if side == "sell" and price > trend_ma[i]:
+            return False   # don't sell above trend
+
+    # Volume filter
+    if config.volume_ma_period > 0 and "volume" in data.columns \
+       and not np.isnan(vol_ma[i]):
+        current_vol = float(data["volume"].iloc[i])
+        if current_vol < vol_ma[i] * config.volume_multiplier:
+            return False   # volume too low
+
+    return True
 
 
 # ---------------------------------------------------------------------------

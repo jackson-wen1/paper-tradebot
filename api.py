@@ -37,7 +37,7 @@ BOT_STATE_FILE = Path("/tmp/bot_state.json")
 
 _DEFAULT_STATE = {
     "strategy": "momentum",
-    "symbols": ["SPY", "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA"],
+    "symbols": ["SPY", "GOOGL", "AMZN", "NVDA"],
     "timeframe": "1Min",
     "running": False,
     "started_at": None,

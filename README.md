@@ -95,7 +95,7 @@ ALPACA_BASE_URL=https://paper-api.alpaca.markets
 # For the API server
 CORS_ORIGINS=http://localhost:3000
 BOT_STRATEGY=momentum
-BOT_SYMBOLS=SPY,AAPL,MSFT,GOOGL,AMZN,NVDA
+BOT_SYMBOLS=SPY,GOOGL,AMZN,NVDA
 ```
 
 Get your API keys from [Alpaca Dashboard](https://app.alpaca.markets/paper/dashboard/overview) → Paper Trading → API Keys.

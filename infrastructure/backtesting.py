@@ -21,7 +21,7 @@ class BacktestConfig:
     initial_capital: float = 100_000.0
     commission_per_trade: float = 0.0      # Alpaca is commission-free
     slippage_pct: float = 0.001            # 0.1% slippage assumption
-    max_position_pct: float = 0.05         # 5% per position
+    max_position_pct: float = 0.20         # 20% per position (matches live risk config)
     risk_free_rate: float = 0.05           # For Sharpe/Sortino calculation
 
 
