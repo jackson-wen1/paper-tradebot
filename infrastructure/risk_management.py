@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class RiskConfig:
     """Configurable risk parameters."""
-    max_position_pct: float = 0.05         # Max 5% of portfolio per position
+    max_position_pct: float = 0.20         # Max 20% of portfolio per position
     max_portfolio_loss_daily_pct: float = 0.03  # Halt at 3% daily loss
     max_open_positions: int = 20
     default_stop_loss_pct: float = 0.02    # 2% stop-loss
