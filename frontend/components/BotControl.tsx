@@ -8,6 +8,7 @@ const STRATEGIES = [
   "mean_reversion",
   "trend_following",
   "options_volatility",
+  "ma_crossover_confirmed",
 ];
 
 const TIMEFRAMES = ["1Min", "5Min", "15Min", "1Hour", "1Day"];
