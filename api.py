@@ -197,6 +197,7 @@ STRATEGY_MAP = {
     "mean_reversion": "strategies.mean_reversion",
     "trend_following": "strategies.trend_following",
     "options_volatility": "strategies.options_volatility",
+    "ma_crossover_confirmed": "strategies.ma_crossover_confirmed",
 }
 
 

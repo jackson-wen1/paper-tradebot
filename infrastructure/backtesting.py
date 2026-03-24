@@ -221,16 +221,18 @@ class BacktestEngine:
         # Sharpe ratio (annualized)
         rf_daily = self.config.risk_free_rate / 252
         excess_returns = daily_returns - rf_daily
+        excess_std = float(excess_returns.std())
         sharpe = (
-            np.sqrt(252) * excess_returns.mean() / excess_returns.std()
-            if excess_returns.std() > 0 else 0
+            np.sqrt(252) * float(excess_returns.mean()) / excess_std
+            if excess_std > 1e-12 else 0.0
         )
 
         # Sortino ratio (only downside deviation)
         downside = daily_returns[daily_returns < 0]
+        downside_std = float(downside.std()) if len(downside) > 0 else 0.0
         sortino = (
-            np.sqrt(252) * (daily_returns.mean() - rf_daily) / downside.std()
-            if len(downside) > 0 and downside.std() > 0 else 0
+            np.sqrt(252) * (float(daily_returns.mean()) - rf_daily) / downside_std
+            if downside_std > 1e-12 else 0.0
         )
 
         # Max drawdown
@@ -254,7 +256,12 @@ class BacktestEngine:
         win_rate = len(wins) / len(pnls) if pnls else 0
         avg_win = np.mean(wins) if wins else 0
         avg_loss = np.mean(losses) if losses else 0
-        profit_factor = abs(sum(wins) / sum(losses)) if losses and sum(losses) != 0 else float("inf")
+        if not pnls:
+            profit_factor = 0.0               # no trades → 0, not inf
+        elif not losses or sum(losses) == 0:
+            profit_factor = float(sum(wins))  # all winners → raw profit
+        else:
+            profit_factor = abs(sum(wins) / sum(losses))
 
         # Average holding period
         holding_periods = [

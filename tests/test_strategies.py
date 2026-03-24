@@ -207,6 +207,82 @@ class TestOptionsVolatilitySignals:
         assert signals["signal"].isin([-1, 0, 1]).all()
 
 
+class TestMACrossoverConfirmedSignals:
+    """Tests for the confirmed MA crossover strategy (all three modes)."""
+
+    def test_generate_signals_shape_iqr_avg(self) -> None:
+        from strategies.ma_crossover_confirmed import generate_signals, MACrossoverConfig
+
+        data = _make_ohlcv(200)
+        config = MACrossoverConfig(signal_mode="iqr_avg")
+        signals = generate_signals(data, config)
+
+        assert "signal" in signals.columns
+        assert "short_ma" in signals.columns
+        assert "long_ma" in signals.columns
+        assert "bb_upper" in signals.columns
+        assert len(signals) == len(data)
+
+    def test_generate_signals_shape_iqr_highlow(self) -> None:
+        from strategies.ma_crossover_confirmed import generate_signals, MACrossoverConfig
+
+        data = _make_ohlcv(200)
+        config = MACrossoverConfig(signal_mode="iqr_highlow")
+        signals = generate_signals(data, config)
+
+        assert "signal" in signals.columns
+        assert len(signals) == len(data)
+
+    def test_generate_signals_shape_bollinger(self) -> None:
+        from strategies.ma_crossover_confirmed import generate_signals, MACrossoverConfig
+
+        data = _make_ohlcv(200)
+        config = MACrossoverConfig(signal_mode="bollinger")
+        signals = generate_signals(data, config)
+
+        assert "signal" in signals.columns
+        assert len(signals) == len(data)
+
+    def test_signals_are_valid_all_modes(self) -> None:
+        from strategies.ma_crossover_confirmed import generate_signals, MACrossoverConfig
+
+        data = _make_ohlcv(300)
+        for mode in ("iqr_avg", "iqr_highlow", "bollinger"):
+            config = MACrossoverConfig(signal_mode=mode)
+            signals = generate_signals(data, config)
+            assert signals["signal"].isin([-1, 0, 1]).all(), f"Invalid signal values in mode {mode}"
+
+    def test_invalid_mode_raises(self) -> None:
+        from strategies.ma_crossover_confirmed import generate_signals, MACrossoverConfig
+
+        data = _make_ohlcv(100)
+        config = MACrossoverConfig(signal_mode="invalid")
+        with pytest.raises(ValueError, match="signal_mode"):
+            generate_signals(data, config)
+
+    def test_custom_ma_periods(self) -> None:
+        from strategies.ma_crossover_confirmed import generate_signals, MACrossoverConfig
+
+        data = _make_ohlcv(200)
+        config = MACrossoverConfig(short_ma_period=5, long_ma_period=15)
+        signals = generate_signals(data, config)
+
+        assert signals["signal"].isin([-1, 0, 1]).all()
+
+    def test_backtest_integration(self) -> None:
+        from strategies.ma_crossover_confirmed import generate_signals, MACrossoverConfig
+        from infrastructure.backtesting import BacktestEngine, BacktestConfig
+
+        data = _make_ohlcv(300)
+        config = MACrossoverConfig(signal_mode="iqr_avg", iqr_multiplier=0.5)
+        signals = generate_signals(data, config)
+        engine = BacktestEngine(BacktestConfig(initial_capital=100_000))
+        result = engine.run(data, signals, "TEST")
+
+        assert "sharpe_ratio" in result.metrics
+        assert result.metrics["initial_capital"] == 100_000
+
+
 class TestRiskManagement:
     def test_validate_order_passes(self) -> None:
         from infrastructure.risk_management import RiskManager, RiskConfig
