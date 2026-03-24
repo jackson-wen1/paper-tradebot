@@ -35,10 +35,12 @@ logger = logging.getLogger(__name__)
 
 BOT_STATE_FILE = Path("/tmp/bot_state.json")
 
+# Defaults come from .env so settings survive process restarts
+from config import BOT_STRATEGY, BOT_SYMBOLS, BOT_TIMEFRAME  # noqa: E402
 _DEFAULT_STATE = {
-    "strategy": "momentum",
-    "symbols": ["SPY", "GOOGL", "AMZN", "NVDA"],
-    "timeframe": "1Min",
+    "strategy": BOT_STRATEGY,
+    "symbols": BOT_SYMBOLS,
+    "timeframe": BOT_TIMEFRAME,
     "running": False,
     "started_at": None,
 }
